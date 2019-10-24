@@ -1,0 +1,618 @@
+package org.embulk.guess.timeformat;
+
+import java.util.ArrayList;
+import org.embulk.config.ConfigDiff;
+import org.embulk.config.ConfigSource;
+import org.embulk.spi.util.LineDecoder;
+import org.embulk.spi.util.ListFileInput;
+
+public final class TimeFormatGuess {
+    private TimeFormatGuess() {
+        // No instantiation.
+    }
+
+    public static String guess(final List<Object> objects) {
+        final ArrayList<Match> matches = new ArrayList<>();
+        for (final Object object : objects) {
+            final String text = object.toString();
+            if (!text.isEmpty()) {
+                for (final TimeFormatPattern pattern : PATTERNS) {
+                    pattern.match(text);
+                }
+            }
+        }
+
+        for (final String text : texts) {
+        }
+      matches = texts.map do |text|
+        PATTERNS.map {|pattern| pattern.match(text) }.compact
+      end.flatten
+
+        /*
+      matches = texts.map do |text|
+        PATTERNS.map {|pattern| pattern.match(text) }.compact
+      end.flatten
+      if matches.empty?
+        return nil
+      elsif matches.size == 1
+        return matches[0].format
+      else
+        match_groups = matches.group_by {|match| match.mergeable_group }.values
+        best_match_group = match_groups.sort_by {|group| group.size }.last
+        best_match = best_match_group.shift
+        best_match_group.each {|m| best_match.merge!(m) }
+        return best_match.format
+      end
+        */
+    }
+
+    public abstract static class Match {
+        public abstract String format();
+    }
+
+    public enum Part {
+        YEAR,
+        MONTH,
+        DAY,
+        HOUR,
+        MINUTE,
+        SECOND,
+        FRAC,
+        ZONE,
+        ;
+    }
+
+    public enum Option {
+        ZERO,
+        BLANK,
+        NONE,
+        FRAC_3,
+        FRAC_N,
+        ;
+    }
+
+    public static class GuessMatch extends Match {
+        public GuessMatch(
+                final Iterable<String> delimiters,
+                final Iterable<Part> parts,
+                final Iterable<Option> partOptions) {
+            this.delimiters = delimiters;
+            this.parts = parts;
+            this.partOptions = partOptions;
+        }
+
+        @Override
+        public String format() {
+            final StringBuilder format = new StringBuilder();
+
+            for (int i = 0; i < this.parts.size(); ++i) {
+                if (i != 0) {
+                    format.append(this.delimiters[i - 1]);
+                }
+                final String option = this.partOptions[i];
+
+                switch (this.parts[i]) {
+                    case YEAR:
+                        format.append("%Y");
+                        break;
+
+                    case MONTH:
+                        switch (option) {
+                            case ZERO:
+                                format.append("%m");
+                                break;
+
+                            case BLANK:
+                                // format.append("%_m");  // not supported
+                                format.append("%m");
+                                break;
+
+                            case NONE:
+                                // format.append("%-m");  // not supported
+                                format.append("%m");
+                                break;
+
+                            default:
+                                format.append("%m");
+                        }
+                        break;
+
+                    case DAY:
+                        switch (option) {
+                            case ZERO:
+                                format.append("%d");
+                                break;
+
+                            case BLANK:
+                                format.append("%e");
+                                break;
+
+                            case NONE:
+                                format.append("%d");  // not supported
+                                break;
+
+                            default:
+                                format.append("%d");
+                        }
+                        break;
+
+                    case HOUR:
+                        switch (option) {
+                            case ZERO:
+                                format.append("%H");
+                                break;
+
+                            case BLANK:
+                                format.append("%k");
+                                break;
+
+                            case NONE:
+                                format.append("%k");  // not supported
+                                break;
+
+                            default:
+                                format.append("%H");
+                        }
+                        break;
+
+                    case MINUTE:
+                        // heading options are not supported
+                        format.append("%M");
+                        break;
+
+                    case SECOND:
+                        // heading options are not supported
+                        format.append("%S");
+                        break;
+
+                    case FRAC:
+                        /*
+            if option <= 3
+              format << '%L'
+            #elsif option <= 6
+            #  format << '%6N'
+            #elsif option <= 6
+            #  format << '%6N'
+            #elsif option <= 9
+            #  format << '%9N'
+            #elsif option <= 12
+            #  format << '%12N'
+            #elsif option <= 15
+            #  format << '%15N'
+            #elsif option <= 18
+            #  format << '%18N'
+            #elsif option <= 21
+            #  format << '%21N'
+            #elsif option <= 24
+            #  format << '%24N'
+            else
+              format << '%N'
+            end
+                        */
+                        break;
+
+                    case ZONE:
+                        /*
+            case option
+            when :extended
+              format << '%:z'
+            else
+              # :simple, :abb
+              # don't use %Z even with :abb: https://github.com/jruby/jruby/issues/3702
+              format << '%z'
+            end
+                        */
+                        break;
+                    default:
+                        throw new RuntimeException("Unknown part: #{@parts[i]}");
+                        break;
+                }
+            }
+            return format.toString();
+        }
+
+        public mergeable_group() {
+            /*
+        # MDY is mergible with DMY
+        if i = array_sequence_find(@parts, [:day, :month, :year])
+          ps = @parts.dup
+          ps[i, 3] = [:month, :day, :year]
+          [@delimiters, ps]
+        else
+          [@delimiters, @parts]
+        end
+            */
+        }
+
+        /*
+      attr_reader :parts
+      attr_reader :part_options
+        */
+
+        public merge!(another_in_group) {
+            /*
+        part_options = another_in_group.part_options
+        @part_options.size.times do |i|
+          @part_options[i] ||= part_options[i]
+          if @part_options[i] == nil
+            part_options[i]
+          elsif part_options[i] == nil
+            @part_options[i]
+          else
+            [@part_options[i], part_options[i]].sort.last
+          end
+        end
+
+        # if DMY matches, MDY is likely false match of DMY.
+        dmy = array_sequence_find(another_in_group.parts, [:day, :month, :year])
+        mdy = array_sequence_find(@parts, [:month, :day, :year])
+        if mdy && dmy
+          @parts[mdy, 3] = [:day, :month, :year]
+        end
+            */
+        }
+
+        public array_sequence_find(array, seq) {
+            /*
+        (array.size - seq.size + 1).times {|i|
+          return i if array[i, seq.size] == seq
+        }
+        return nil
+            */
+        }
+
+    }
+
+    private static abstract class TimeFormatPattern {
+        public abstract Match match(final String text);
+    }
+
+    private static class GuessPattern extends TimeFormatPattern {
+        private static final Pattern
+        @Override
+        public Match match(final String text) {
+            final ArrayList<String> delimiters = new ArrayList<>();
+            final ArrayList<Part> parts = new ArrayList<>();
+            final ArrayList<Option> partOptions = new ArrayList<>();
+
+            final Matcher ymdDelimMatcher = YMD_REST.matcher(text);
+            final Matcher ymdNoDelimMatcher = YMD_NODELIM_REST.matcher(text);
+            final Matcher ymdMatcher;
+            if (ymdDelimMatcher.matches()) {
+                ymdMatcher = ymdDelimMatcher;
+            } else if (ymdNoDelimMatcher.ymdMatcher()) {
+                ymdMatcher = ymdNoDelimMatcher;
+            } else {
+                ymdMatcher = null;
+            }
+
+            final Matcher mdyDelimMatcher = MDY_REST.matcher(text);
+            final Matcher mdyNoDelimMatcher = MDY_NODELIM_REST.matcher(text);
+            final Matcher mdyMatcher;
+            if (ymdMatcher != null) {
+                mdyMatcher = null;
+            } else if (mdyDelimMatcher.matches()) {
+                mdyMatcher = mdyDelimMatcher;
+            } else if (mdyNoDelimMatcher.matches()) {
+                mdyMatcher = mdyNoDelimMatcher;
+            } else {
+                mdyMatcher = null;
+            }
+
+            final Matcher dmyDelimMatcher = DMY_REST.matcher(text);
+            final Matcher dmyNoDelimMatcher = DMY_NODELIM_REST.matcher(text);
+            if (ymdMatcher != null && mdyMatcher != null) {
+                dmyMatcher = null;
+            } else if (dmyDelimMatcher.matches()) {
+                dmyMatcher = dmyDelimMatcher;
+            } else if (dmyNoDelimMatcher.matches()) {
+                dmyMatcher = dmyNoDelimMatcher;
+            } else {
+                dmyMatcher = null;
+            }
+
+            final String dateDelim;
+            final String rest;
+            if (ymdMatcher != null) {
+                dateDelim = group(ymdMatcher, "date_delim", "");
+
+                parts.add(Part.YEAR);
+                partOptions.add(null);  // To be compacted.
+
+                delimiters.add(dateDelim);
+                parts.add(Part.MONTH);
+                partOptions.add(partHeadingOption(ymdMatcher.group("month")));
+
+                delimiters.add(dateDelim);
+                parts.add(Part.DAY);
+                partOptions.add(partHeadingOption(ymdMatcher.group("day")));
+
+                rest = ymdMatcher.group("rest");
+            } else if (mdyMatcher != null) {
+                dateDelim = group(mdyMatcher, "date_delim", "");
+
+                parts.add(Part.MONTH);
+                partOptions.add(partHeadingOption(ymdMatcher.group("month")));
+
+                delimiters.add(dateDelim);
+                parts.add(Part.DAY);
+                partOptions.add(partHeadingOption(ymdMatcher.group("day")));
+
+                delimiters.add(dateDelim);
+                parts.add(Part.YEAR);
+                partOptions.add(null);  // To be compacted.
+
+                rest = mdyMatcher.group("rest");
+            } else if (dmyMatcher != null) {
+                dateDelim = group(dmyMatcher, "date_delim", "");
+
+                parts.add(Part.DAY);
+                partOptions.add(partHeadingOption(ymdMatcher.group("day")));
+
+                delimiters.add(dateDelim);
+                parts.add(Part.MONTH);
+                partOptions.add(partHeadingOption(ymdMatcher.group("month")));
+
+                delimiters.add(dateDelim);
+                parts.add(Part.YEAR);
+                partOptions.add(null);  // To be compacted.
+
+                rest = dmyMatcher.group("rest");
+            } else {
+                dateDelim = "";
+                return null;
+            }
+
+            /*
+        if tm = (
+              /^(?<date_time_delim>#{date_time_delims})#{TIME}(?<rest>.*?)?$/.match(rest) or
+              /^(?<date_time_delim>#{date_time_delims})#{TIME_NODELIM}(?<rest>.*?)?$/.match(rest) or
+              (date_delim == "" && /^#{TIME_NODELIM}(?<rest>.*?)?$/.match(rest))
+            )
+          date_time_delim = tm["date_time_delim"] rescue ""
+          time_delim = tm["time_delim"] rescue ""
+
+          delimiters << date_time_delim
+          parts << :hour
+          part_options << part_heading_option(tm["hour"])
+
+          if tm["minute"]
+            delimiters << time_delim
+            parts << :minute
+            part_options << part_heading_option(tm["minute"])
+
+            if tm["second"]
+              delimiters << time_delim
+              parts << :second
+              part_options << part_heading_option(tm["second"])
+
+              if tm["frac"]
+                delimiters << tm["frac_delim"]
+                parts << :frac
+
+                //// Here, reduce the integer "size" into Option
+                part_options << tm["frac"].size
+              end
+            end
+          end
+
+          rest = tm["rest"]
+        end
+
+        if zm = /^#{ZONE}$/.match(rest)
+          delimiters << (zm["zone_space"] || '')
+          parts << :zone
+          if zm["zone_off"]
+            if zm["zone_off"].include?(':')
+              part_options << :extended
+            else
+              part_options << :simple
+            end
+          else
+            part_options << :abb
+          end
+
+          return GuessMatch.new(delimiters, parts, part_options)
+
+        elsif rest =~ /^\s*$/
+          return GuessMatch.new(delimiters, parts, part_options)
+
+        else
+          return nil
+        end
+*/
+        }
+
+        /*
+      def match(text)
+      end
+        */
+
+
+        private static Option partHeadingOption(final String text) {
+            if (text.at(0) == '0') {
+                return Option.ZERO;
+            } else if (text.at(0) == ' ') {
+                return Option.BLANK;
+            } else if (text.length() == 1) {
+                return Option.NONE;
+            } else {
+                return null;
+            }
+        }
+
+        private static String group(final Matcher matcher, final String name, final String defaultValue) {
+            try {
+                return matcher.group(name);
+            } catch (final IllegalArgumentException ex) {
+                return defaultValue;
+            }
+        }
+
+    }
+
+    public static class SimpleMatch {
+        public SimpleMatch(final String format) {
+            // @format = format
+        }
+
+        /*
+      attr_reader :format
+
+      def mergeable_group
+        @format
+      end
+
+      def merge!(another_in_group)
+      end
+        */
+    }
+
+    public static class Rfc2822Pattern extends TimeFormatPattern {
+        public Rfc2822Pattern() {
+            this.regexp = Pattern.compile(String.format(
+                "^(?<weekday>%s, )?\d\d %s \d\d\d\d(?<time> \d\d:\d\d(?<second>:\d\d)? (?:(?<zone_off>%s)|(?<zone_abb>%s)))?$"),
+                WEEKDAY_NAME_SHORT, MONTH_NAME_SHORT, ZONE_OFF, ZONE_ABB);
+        }
+
+        @Override
+        public Match match(final String text) {
+            final Matcher matcher = this.regexp.matcher(text);
+            if (matcher.matches()) {
+                final StringBuilder format = new StringBuilder();
+                if (!matcher.group("weekday").isEmpty()) {
+                    format.append("%a, ");
+                }
+                format.append("%d %b %Y");
+                if (!matcher.group("time").isEmpty()) {
+                    format.append(" %H:%M");
+                }
+                if (!matcher.group("second").isEmpty()) {
+                    format.append(":%S");
+                }
+                if (!matcher.group("zone_off").isEmpty()) {
+                    if (!matcher.group("zone_off").contains(":")) {
+                        format.append(" %:z");
+                    } else {
+                        format.append(" %z");
+                    }
+                } else if (!matcher.group("zone_abb").isEmpty()) {
+                    // don't use %Z: https://github.com/jruby/jruby/issues/3702
+                    if (!matcher.group("zone_abb").isEmpty()) {
+                        format.append(" %z");
+                    }
+                }
+                return new SimpleMatch(format.toString());
+            } else {
+                return null;
+            }
+        }
+
+        private final Pattern regexp;
+    }
+
+    public static class RegexpPattern extends TimeFormatPattern {
+        public RegexpPattern(final Pattern regexp, final String format) {
+            this.regexp = regexp;
+            this.match = new SimpleMatch(format);
+        }
+
+        @Override
+        public Match match(final String text) {
+            if (this.regexp.matcher(text).matches()) {
+                return this.match;
+            } else {
+                return null;
+            }
+        }
+
+        private final Pattern regexp;
+        private final Match match;
+    }
+
+    public static class StandardPatterns {
+        public static final Pattern APACHE_CLF = Pattern.compile(String.format(
+                "^\\d\\d\\/%s\\/\\d\\d\\d\\d:\\d\\d:\\d\\d:\\d\\d %s?$", MONTH_NAME_SHORT, ZONE_OFF));
+        public static final Pattern ANSI_C_ASCTIME = Pattern.compile(String.format(
+                "^%s %s \\d\\d? \\d\\d:\\d\\d:\\d\\d \\d\\d\\d\\d$", WEEKDAY_NAME_SHORT, MONTH_NAME_SHORT));
+    }
+
+    public static final Pattern[] PATTERNS = [
+        new GuessPattern(),
+        new Rfc2822Pattern(),
+        new RegexpPattern(StandardPatterns.APACHE_CLF, "%d/%b/%Y:%H:%M:%S %z"),
+        new RegexpPattern(StandardPatterns.ANSI_C_ASCTIME, "%a %b %e %H:%M:%S %Y")
+    ];
+
+    public static final String YEAR = "[1-4][0-9]{3}";
+    public static final String MONTH = "10|11|12|[0 ]?[0-9]";
+    public static final String MONTH_NODELIM = "10|11|12|[0][0-9]";
+    public static final String DAY = "31|30|[1-2][0-9]|[0 ]?[1-9]";
+    public static final String DAY_NODELIM = "31|30|[1-2][0-9]|[0][1-9]";
+    public static final String HOUR = "20|21|22|23|24|1[0-9]|[0 ]?[0-9]";
+    public static final String HOUR_NODELIM = "20|21|22|23|24|1[0-9]|[0][0-9]";
+    public static final String MINUTE = "60|[1-5][0-9]|[0 ]?[0-9]";
+    public static final String SECOND = MINUTE;
+    public static final String MINUTE_NODELIM = "60|[1-5][0-9]|[0][0-9]";
+    public static final String SECOND_NODELIM = MINUTE_NODELIM;
+
+    public static final String MONTH_NAME_SHORT = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
+    public static final String MONTH_NAME_FULL =
+            "January|February|March|April|May|June|July|August|September|October|November|December";
+
+    public static final String WEEKDAY_NAME_SHORT = "Sun|Mon|Tue|Wed|Thu|Fri|Sat";
+    public static final String WEEKDAY_NAME_FULL = "Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday";
+
+    public static final String ZONE_OFF = "(?:Z|[\\-\\+]\\d\\d(?::?\\d\\d)?)";
+    public static final String ZONE_ABB = "[A-Z]{1,3}";
+
+        public static final String DATE_DELIMS = "[\\/\\-\\.]";
+
+        // yyyy-MM-dd
+        public static final String YMD = String.format(
+                "(?<year>%s)(?<date_delim>%s)(?<month>%s)\\k<date_delim>(?<day>%s)", YEAR, DATE_DELIMS, MONTH, DAY);
+        public static final String YMD_NODELIM = String.format(
+                "(?<year>%s)(?<month>%s)(?<day>%s)", YEAR, MONTH_NODELIM, DAY_NODELIM);
+        public static final Pattern YMD_REST = Pattern.compile(String.format("^%s(?<rest>.*?)$", YMD));
+        public static final Pattern YMD_NODELIM_REST = Pattern.compile(String.format("^%s(?<rest>.*?)$", YMD_NODELIM));
+
+        // MM/dd/yyyy
+        public static final String MDY = String.format(
+                "(?<month>%s)(?<date_delim>%s)(?<day>%s)\\k<date_delim>(?<year>%s)", MONTH, DATE_DELIMS, DAY, YEAR);
+        public static final String MDY_NODELIM = String.format(
+                "(?<month>%s)(?<day>%s)(?<year>%s)", MONTH_NODELIM, DAY_NODELIM, YEAR);
+        public static final Pattern MDY_REST = Pattern.compile(String.format("^%s(?<rest>.*?)$", MDY));
+        public static final Pattern MDY_NODELIM_REST = Pattern.compile(String.format("^%s(?<rest>.*?)$", MDY_NODELIM));
+
+        // dd.MM.yyyy
+        public static final String DMY = String.format(
+                "(?<day>%s)(?<date_delim>%s)(?<month>%s)\\k<date_delim>(?<year>%s)", DAY, DATE_DELIMS, MONTH, YEAR);
+        public static final String DMY_NODELIM = String.format(
+                "(?<day>%s)(?<month>%s)(?<year>%s)", DAY_NODELIM, MONTH_NODELIM, YEAR);
+        public static final Pattern DMY_REST = Pattern.compile(String.format("^(?<rest>.*?)$", DMY));
+        public static final Pattern DMY_NODELIM_REST = Pattern.compile(String.format("^(?<rest>.*?)$", DMY_NODELIM));
+
+        public static final String FRAC = "[0-9]{1,9}";
+        public static final String TIME_DELIMS = "[\\:\\-]";
+        public static final String FRAC_DELIMS = "[\\.\\,]";
+
+        public static final String TIME = String.format(
+                "(?<hour>%s)(?:(?<time_delim>%s)(?<minute>%s)" +
+                "(?:\\k<time_delim>(?<second>%s)(?:(?<frac_delim>%s)(?<frac>%s))?)?)?",
+                HOUR, TIME_DELIMS, MINUTE, SECOND, FRAC_DELIMS, FRAC);
+        public static final String TIME_NODELIM = String.format(
+                "(?<hour>%s)(?:(?<minute>%s)((?<second>%s)(?:(?<frac_delim>%s)(?<frac>%s))?)?)?",
+                HOUR_NODELIM, MINUTE_NODELIM, SECOND_NODELIM, FRAC_DELIMS, FRAC);
+
+        public static final String ZONE = String.format(
+                "(?<zone_space> )?(?<zone>(?<zone_off>%s)|(?<zone_abb>%s))", ZONE_OFF, ZONE_ABB);
+
+        public static final String DATE_TIME_DELIMS = "(:? |_|T|\\. ?)";
+
+        public static final Pattern REST_TIME = Pattern.compile(String.format(
+                "^(?<date_time_delim>%s)%s(?<rest>.*?)?$", DATE_TIME_DELIMS, TIME));
+        public static final Pattern REST_TIME_NODELIM = Pattern.compile(String.format(
+                "^(?<date_time_delim>%s)%s(?<rest>.*?)?$", DATE_TIME_DELIMS, TIME_NODELIM));
+        public static final Pattern REST_TIME_NODELIM_DATE_NODELIM = Pattern.compile(String.format(
+                "^%s(?<rest>.*?)?$", TIME_NODELIM));
+}

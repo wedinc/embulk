@@ -1,0 +1,177 @@
+package org.embulk.guess;
+
+import org.embulk.config.ConfigDiff;
+import org.embulk.config.ConfigSource;
+import org.embulk.spi.Schema;
+import org.embulk.spi.util.LineDecoder;
+import org.embulk.spi.util.ListFileInput;
+
+public class SchemaGuess {
+    private SchemaGuess() {
+        // No instantiation.
+    }
+
+    public static Schema fromHashRecords(arrayOfHash) {
+        arrayOfHash = Array(arrayOfHash)
+        if arrayOfHash.empty?
+            throw new RuntimeException("SchemaGuess Can't guess schema from no records");
+        end
+        column_names = arrayOfHash.first.keys
+        samples = arrayOfHash.to_a.map {|hash| column_names.map {|name| hash[name] } }
+        return fromArrayRecords(column_names, samples)
+    }
+
+    @SuppressWarnings("deprecation")  // On calling typesFromArrayRecords.
+    public static Schema fromArrayRecords(final List<String> columnNames, final List<?> samples) {
+        final List<?> columnTypes = typesFromArrayRecords(samples);
+
+        /*
+        columns = columnTypes.zip(column_names).map do |(type,name)|
+          hash = {name: name, type: type.to_sym}
+          hash[:format] = type.format if type.is_a?(TimestampTypeMatch)
+          Embulk::Column.new(hash)
+        end
+        */
+
+        return new Schema(columns);
+    }
+
+    @Deprecated  // TODO: this method will be private once guess/csv is refactored
+    public static List<?> typesFromArrayRecords(final List<?> samples) {
+        final ArrayList<?> columnarTypes = new ArrayList<>();
+        // columnar_types = []
+
+        for (final ? record : samples) {
+            record.each_with_index { |value, i|
+                (columnar_types[i] ||= []) << guessType(value)
+            }
+        }
+        columnar_types.map {|types| mergeTypes(types) }
+    }
+
+    private static GuessedType guessType(final Object object) {
+        if (object instanceof ? || object instanceof ?) {
+            return GuessedType.JSON;
+        }
+        final String string = object.toString();
+
+        if (isTrue(string) || isFalse(string)) {
+            return GuessedType.BOOLEAN;
+        }
+
+        // TODO:
+        if (TimeFormatGuess.guess(string)) {
+            return GuessedType.createTimestampType(string);
+        }
+
+        // TODO:
+        if (string.to_i.to_s == string) {
+            return GuessedType.LONG;
+        }
+
+        if (DOUBLE_PATTERN.matcher(string).matches()) {
+            return GuessedType.DOUBLE;
+        }
+
+        if (string.isEmpty()) {
+            return null;
+        }
+
+        try {
+            // TODO:
+            JSON.parse(string);
+            return GuessedType.JSON;  // Considered as JSON if it is successfully parsed as JSON.
+        } catch (final Throwable ignored) {
+            // Pass-through.
+        }
+
+        return GuessedType.STRING;
+    }
+
+    private static ? mergeTypes(final List<?> types) {
+        /*
+        t = types.inject(nil) {|r,t| mergeType(r,t) } || "string"
+        if t.is_a?(TimestampTypeMatch)
+          format = TimeFormatGuess.guess(types.map {|type| type.is_a?(TimestampTypeMatch) ? type.format : nil }.compact)
+          return TimestampTypeMatch.new(format)
+        else
+          return t
+        end
+        */
+    }
+
+    // taken from CsvParserPlugin.TRUE_STRINGS
+    private static boolean isTrue(final String s) {
+        if (s == null) {
+            return false;
+        }
+        switch (s) {
+            case "true":
+            case "True":
+            case "TRUE":
+            case "yes":
+            case "Yes":
+            case "YES":
+            case "t":
+            case "T":
+            case "y":
+            case "Y":
+            case "on":
+            case "On":
+            case "ON":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // When matching to false string, then retrun 'true'
+    private static boolean isFalse(final String s) {
+        if (s == null) {
+            return false;
+        }
+        switch (s) {
+            case "false":
+            case "False":
+            case "FALSE":
+            case "no":
+            case "No":
+            case "NO":
+            case "f":
+            case "F":
+            case "n":
+            case "N":
+            case "off":
+            case "Off":
+            case "OFF":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // Introduce a regular expression to make better suggestion to double type. It refers to Guava 21.0's regular
+    // expression in Doubles#fpPattern() but, there're difference as following:
+    // * It intentionaly rejects float values when they start with "0" like "001.0", "010.01". "0.1" is ok.
+    // * It doesn't support hexadecimal representation. It could be improved more later.
+    private static Pattern DOUBLE_PATTERN = Pattern.compile(
+            "^[+-]?(NaN|Infinity|([1-9]\\d*|0)(\\.\\d+)([eE][+-]?\\d+)?[fFdD]?)$");
+
+    private static GuessedType mergeType(final GuessedType type1, final GuessedType type2) {
+        if (type1 == type2) {
+            return type1;
+        } else if (type1 == null) {
+            return type2;
+        } else if (type2 == null) {
+            return type1;
+        } else if (/*TODO*/) {  // Coalesce long + double => double
+            return GuessedType.DOUBLE;
+        } else if (/*TODO*/) {  // Coalesce boolean + long => long
+            return GuessedType.LONG;
+        } else if (/*TODO*/) {  // Coalesce timestamp + long => long // TimeFormatGuess matches with digits without delimiters
+            return GuessedType.LONG;
+        } else {
+            return GuessedType.STRING;
+        }
+    }
+}
