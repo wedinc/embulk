@@ -14,9 +14,9 @@ endif
 
 
 build: verify
-	@docker build -t gcr.io/wed-analytics-$(TARGET)/embulk/embulk:latest .
+	@docker build -t gcr.io/wed-$(TARGET)-analytics/embulk/embulk:latest .
 
 deploy: verify
-	@docker push gcr.io/wed-analytics-$(TARGET)/embulk/embulk:latest
+	@docker push gcr.io/wed-$(TARGET)-analytics/embulk/embulk:latest
 
 
