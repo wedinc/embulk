@@ -48,7 +48,7 @@ version = '0.9.23-SNAPSHOT'
 description = 'Embulk is an open-source, plugin-based bulk data loader to scale and simplify data management across heterogeneous data stores. It can collect and ship any kinds of data in high throughput with transaction control.'
 
 ext {
-    jrubyVersion = '9.1.15.0'
+    jrubyVersion = '9.2.9.0'
     summary = 'Embulk, a plugin-based parallel bulk data loader'
 }
 
